@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Avery's Sky Dash</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: #1a1525;
+            overflow: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            user-select: none;
+        }
+        canvas {
+            display: block;
+            margin: 0 auto;
+            background: linear-gradient(to bottom, #101c36, #2d1847, #48114f);
+        }
+        #ui {
+            position: absolute;
+            top: 10px;
+            left: 0;
+            width: 100%;
+            text-align: center;
+            color: #fff;
+            font-size: 24px;
+            font-weight: bold;
+            pointer-events: none;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.7);
+        }
+        #menu {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background: rgba(16, 28, 54, 0.9);
+            color: white;
+            text-align: center;
+        }
+        #menu h1 {
+            font-size: 48px;
+            margin-bottom: 10px;
+            color: #ff00ff;
+            text-shadow: 3px 3px 0px #00ffff;
+        }
+        #menu p {
+            font-size: 18px;
+            margin-bottom: 30px;
+            color: #ddd;
+        }
+        button {
+            padding: 15px 30px;
+            font-size: 20px;
+            font-weight: bold;
+            color: #fff;
+            background: #ff0055;
+            border: none;
+            border-radius: 30px;
+            box-shadow: 0 5px #aa0033;
+            cursor: pointer;
+            transition: all 0.1s;
+        }
+        button:active {
+            box-shadow: 0 0px #aa0033;
+            transform: translateY(5px);
+        }
+    </style>
+</head>
+<body>
+
+    <div id="ui">Stars: <span id="score">0</span></div>
+
+    <div id="menu">
+        <h1>Avery's Sky Dash</h1>
+        <p>Guide Avery through the sky! <br>Touch and drag to move left and right.<br>Avoid the red obstacles.</p>
+        <button id="startBtn" onclick="startGame()">TAP TO PLAY</button>
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreEl = document.getElementById('score');
+        const menuEl = document.getElementById('menu');
+
+        // Game state
+        let score = 0;
+        let isPlaying = false;
+        let gameSpeed = 4;
+        let lastTime = 0;
+        
+        // Setup Canvas Size (Full mobile width/height)
+        let width = canvas.width = Math.min(window.innerWidth, 500);
+        let height = canvas.height = window.innerHeight;
+
+        // Resize dynamically
+        window.addEventListener('resize', () => {
+            width = canvas.width = Math.min(window.innerWidth, 500);
+            height = canvas.height = window.innerHeight;
+        });
+
+        // Player (Avery)
+        const avery = {
+            x: width / 2,
+            y: height - 120,
+            radius: 20,
+            targetX: width / 2
+        };
+
+        // Arrays for obstacles and stars
+        let obstacles = [];
+        let stars = [];
+        let obstacleTimer = 0;
+        let starTimer = 0;
+
+        // Touch controls
+        let isDragging = false;
+        canvas.addEventListener('touchstart', (e) => {
+            if(!isPlaying) return;
+            isDragging = true;
+            avery.targetX = e.touches[0].clientX - canvas.getBoundingClientRect().left;
+            e.preventDefault();
+        });
+
+        canvas.addEventListener('touchmove', (e) => {
+            if (!isDragging || !isPlaying) return;
+            avery.targetX = e.touches[0].clientX - canvas.getBoundingClientRect().left;
+            e.preventDefault();
+        });
+
+        canvas.addEventListener('touchend', () => {
+            isDragging = false;
+        });
+
+        // Mouse controls (for desktop testing)
+        canvas.addEventListener('mousedown', (e) => {
+            if(!isPlaying) return;
+            isDragging = true;
+            avery.targetX = e.clientX - canvas.getBoundingClientRect().left;
+        });
+        canvas.addEventListener('mousemove', (e) => {
+            if(!isDragging || !isPlaying) return;
+            avery.targetX = e.clientX - canvas.getBoundingClientRect().left;
+        });
+        canvas.addEventListener('mouseup', () => isDragging = false);
+
+        function startGame() {
+            score = 0;
+            gameSpeed = 5;
+            scoreEl.innerText = score;
+            obstacles = [];
+            stars = [];
+            avery.x = width / 2;
+            avery.targetX = width / 2;
+            isPlaying = true;
+            menuEl.style.display = 'none';
+            lastTime = performance.now();
+            requestAnimationFrame(update);
+        }
+
+        function spawnObstacle() {
+            const radius = 15 + Math.random() * 20;
+            const x = Math.random() * (width - radius * 2) + radius;
+            obstacles.push({ x: x, y: -50, radius: radius, speed: gameSpeed });
+        }
+
+        function spawnStar() {
+            const x = Math.random() * (width - 40) + 20;
+            stars.push({ x: x, y: -50, radius: 12 });
+        }
+
+        function update(time) {
+            if (!isPlaying) return;
+
+            // Calculate delta time for smooth movement
+            const deltaTime = time - lastTime;
+            lastTime = time;
+
+            // Avery smoothing
+            avery.x += (avery.targetX - avery.x) * 0.2;
+            if (avery.x < avery.radius) avery.x = avery.radius;
+            if (avery.x > width - avery.radius) avery.x = width - avery.radius;
+
+            // Spawners
+            obstacleTimer += deltaTime;
+            if (obstacleTimer > 1000 - (gameSpeed * 10)) {
+                spawnObstacle();
+                obstacleTimer = 0;
+            }
+
+            starTimer += deltaTime;
+            if (starTimer > 1500) {
+                spawnStar();
+                starTimer = 0;
+            }
+
+            // Update obstacles
+            for (let i = obstacles.length - 1; i >= 0; i--) {
+                const obs = obstacles[i];
+                obs.y += obs.speed;
+
+                // Collision Detection (Circle vs Circle)
+                const dx = avery.x - obs.x;
+                const dy = avery.y - obs.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+
+                if (distance < avery.radius + obs.radius) {
+                    gameOver();
+                    return;
+                }
+
+                if (obs.y > height + 50) obstacles.splice(i, 1);
+            }
+
+            // Update Stars
+            for (let i = stars.length - 1; i >= 0; i--) {
+                const star = stars[i];
+                star.y += gameSpeed;
+
+                // Collision Detection for Stars
+                const dx = avery.x - star.x;
+                const dy = avery.y - star.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+
+                if (distance < avery.radius + star.radius) {
+                    score += 10;
+                    scoreEl.innerText = score;
+                    stars.splice(i, 1);
+                    // Speed up game gradually
+                    gameSpeed += 0.1;
+                    continue;
+                }
+
+                if (star.y > height + 50) stars.splice(i, 1);
+            }
+
+            draw();
+            requestAnimationFrame(update);
+        }
+
+        function draw() {
+            // Clear canvas
+            ctx.clearRect(0, 0, width, height);
+
+            // Draw Stars
+            ctx.fillStyle = '#f8d125';
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = '#f8d125';
+            stars.forEach(star => {
+                ctx.beginPath();
+                ctx.arc(star.x, star.y, star.radius, 0, Math.PI * 2);
+                ctx.fill();
+            });
+
+            // Draw Obstacles
+            ctx.fillStyle = '#ff3344';
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = '#ff3344';
+            obstacles.forEach(obs => {
+                ctx.beginPath();
+                ctx.arc(obs.x, obs.y, obs.radius, 0, Math.PI * 2);
+                ctx.fill();
+            });
+
+            // Draw Avery (Player)
+            ctx.shadowBlur = 20;
+            ctx.shadowColor = '#00ffff';
+            ctx.fillStyle = '#00ffff';
+            ctx.beginPath();
+            ctx.arc(avery.x, avery.y, avery.radius, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Glow effect reset
+            ctx.shadowBlur = 0;
+        }
+
+        function gameOver() {
+            isPlaying = false;
+            menuEl.style.display = 'flex';
+            document.getElementById('startBtn').innerText = 'PLAY AGAIN';
+            document.querySelector('#menu h1').innerText = 'GAME OVER';
+            document.querySelector('#menu p').innerHTML = `You protected Avery!<br>Final Score: ${score}<br><br>Tap to try again.`;
+        }
+    </script>
+</body>
+</html>
