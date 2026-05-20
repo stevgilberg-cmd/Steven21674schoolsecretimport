@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Avery's Star Jumper</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        body, html {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #11001c;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+        #gameContainer {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            max-width: 450px;
+            margin: 0 auto;
+            background: linear-gradient(to bottom, #11001c, #240046, #3c096c);
+            box-shadow: 0 0 20px rgba(0,0,0,0.8);
+        }
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+        .ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+            color: white;
+            text-align: center;
+        }
+        .hidden {
+            display: none !important;
+        }
+        h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: #ff9e00;
+            text-shadow: 0 0 10px rgba(255,158,0,0.5);
+        }
+        p {
+            font-size: 1rem;
+            margin-bottom: 30px;
+            color: #e0aaff;
+            line-height: 1.4;
+        }
+        button {
+            padding: 15px 40px;
+            font-size: 1.2rem;
+            font-weight: bold;
+            border: none;
+            border-radius: 50px;
+            background: linear-gradient(45deg, #ff6d00, #ff9e00);
+            color: white;
+            box-shadow: 0 5px 15px rgba(255,109,0,0.4);
+            cursor: pointer;
+            transition: transform 0.1s;
+        }
+        button:active {
+            transform: scale(0.95);
+        }
+        #hud {
+            position: absolute;
+            top: 15px;
+            left: 0;
+            width: 100%;
+            padding: 0 20px;
+            display: flex;
+            justify-content: space-between;
+            pointer-events: none;
+            font-family: monospace;
+            font-size: 1.2rem;
+            font-weight: bold;
+            color: #fff;
+            text-shadow: 1px 1px 2px #000;
+        }
+        #scoreBoard { color: #ff9e00; }
+        #highScoreBoard { color: #e0aaff; }
+    </style>
+</head>
+<body>
+
+<div id="gameContainer">
+    <!-- HUD Layer -->
+    <div id="hud">
+        <div id="scoreBoard">STARS: 0</div>
+        <div id="highScoreBoard">HI: 0</div>
+    </div>
+
+    <!-- Gameplay Canvas -->
+    <canvas id="gameCanvas"></canvas>
+
+    <!-- Main Menu Screen -->
+    <div id="mainMenu" class="ui-layer">
+        <h1>Avery's Jump</h1>
+        <p>Help Avery jump from platform to platform!<br>Tap left or right side of the screen to move.</p>
+        <button id="startButton">START</button>
+    </div>
+
+    <!-- Game Over Screen -->
+    <div id="gameOverMenu" class="ui-layer hidden">
+        <h1>Game Over</h1>
+        <p id="finalScoreText">You collected 0 stars!</p>
+        <button id="restartButton">PLAY AGAIN</button>
+    </div>
+</div>
+
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const mainMenu = document.getElementById('mainMenu');
+    const gameOverMenu = document.getElementById('gameOverMenu');
+    const startButton = document.getElementById('startButton');
+    const restartButton = document.getElementById('restartButton');
+    const scoreBoard = document.getElementById('scoreBoard');
+    const highScoreBoard = document.getElementById('highScoreBoard');
+
+    // Game state
+    let gameState = 'MENU'; // MENU, PLAYING, GAMEOVER
+    let score = 0;
+    let highScore = localStorage.getItem('avery_highscore') || 0;
+    highScoreBoard.innerText = `HI: ${highScore}`;
+
+    // System scaling
+    let viewWidth = 0;
+    let viewHeight = 0;
+
+    // Entities
+    let player = {};
+    let platforms = [];
+    let particles = [];
+    let cameraY = 0;
+
+    // Settings
+    const GRAVITY = 0.3;
+    const JUMP_FORCE = -9;
+    const PLAYER_SPEED = 5;
+
+    // Inputs
+    let moveLeft = false;
+    let moveRight = false;
+
+    function resize() {
+        const rect = canvas.parentNode.getBoundingClientRect();
+        canvas.width = rect.width;
+        canvas.height = rect.height;
+        viewWidth = canvas.width;
+        viewHeight = canvas.height;
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    // Controls
+    window.addEventListener('touchstart', (e) => {
+        if (gameState !== 'PLAYING') return;
+        const touchX = e.touches[0].clientX;
+        if (touchX < window.innerWidth / 2) {
+            moveLeft = true;
+            moveRight = false;
+        } else {
+            moveRight = true;
+            moveLeft = false;
+        }
+    });
+
+    window.addEventListener('touchend', () => {
+        moveLeft = false;
+        moveRight = false;
+    });
+
+    // Keyboard fallback for desktop testing
+    window.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowLeft' || e.key === 'a') moveLeft = true;
+        if (e.key === 'ArrowRight' || e.key === 'd') moveRight = true;
+    });
+    window.addEventListener('keyup', (e) => {
+        if (e.key === 'ArrowLeft' || e.key === 'a') moveLeft = false;
+        if (e.key === 'ArrowRight' || e.key === 'd') moveRight = false;
+    });
+
+    function initGame() {
+        score = 0;
+        cameraY = 0;
+        scoreBoard.innerText = `STARS: ${score}`;
+        
+        player = {
+            x: viewWidth / 2 - 15,
+            y: viewHeight - 150,
+            width: 30,
+            height: 30,
+            vx: 0,
+            vy: 0,
+            color: '#ff007f'
+        };
+
+        platforms = [];
+        // Base starting platform
+        platforms.push({
+            x: 0,
+            y: viewHeight - 50,
+            width: viewWidth,
+            height: 20,
+            hasStar: false
+        });
+
+        // Generate initial platforms climbing up
+        let currentY = viewHeight - 150;
+        while (currentY > -viewHeight) {
+            generatePlatform(currentY);
+            currentY -= 100 + Math.random() * 50;
+        }
+
+        particles = [];
+    }
+
+    function generatePlatform(yPosition) {
+        const width = 70 + Math.random() * 40;
+        const x = Math.random() * (viewWidth - width);
+        // 40% chance to spawn a star on the platform
+        const hasStar = Math.random() < 0.4; 
+        
+        platforms.push({
+            x: x,
+            y: yPosition,
+            width: width,
+            height: 12,
+            hasStar: hasStar,
+            starX: x + width/2,
+            starY: yPosition - 20,
+            starRadius: 6,
+            starCollected: false
+        });
+    }
+
+    function spawnParticles(x, y, color) {
+        for (let i = 0; i < 8; i++) {
+            particles.push({
+                x: x,
+                y: y,
+                vx: (Math.random() - 0.5) * 6,
+                vy: (Math.random() - 0.5) * 6,
+                radius: Math.random() * 4 + 2,
+                alpha: 1,
+                color: color
+            });
+        }
+    }
+
+    function update() {
+        if (gameState !== 'PLAYING') return;
+
+        // Player lateral physics
+        if (moveLeft) player.vx = -PLAYER_SPEED;
+        else if (moveRight) player.vx = PLAYER_SPEED;
+        else player.vx *= 0.8; // Friction
+
+        player.x += player.vx;
+        player.vy += GRAVITY;
+        player.y += player.vy;
+
+        // Screen wrapping
+        if (player.x + player.width < 0) player.x = viewWidth;
+        if (player.x > viewWidth) player.x = -player.width;
+
+        // Camera follow (vertical only)
+        if (player.y < viewHeight / 2 + cameraY) {
+            cameraY += (player.y - (viewHeight / 2 + cameraY)) * 0.1;
+        }
+
+        // Platforms update & collision
+        platforms.forEach(plat => {
+            // Collision check only when falling down
+            if (player.vy > 0 &&
+                player.x + player.width > plat.x &&
+                player.x < plat.x + plat.width &&
+                player.y + player.height >= plat.y &&
+                player.y + player.height <= plat.y + 15) {
+                
+                player.vy = JUMP_FORCE;
+                spawnParticles(player.x + player.width/2, player.y + player.height, '#e0aaff');
+            }
+
+            // Star item collection check
+            if (plat.hasStar && !plat.starCollected) {
+                const dx = (player.x + player.width/2) - plat.starX;
+                const dy = (player.y + player.height/2) - plat.starY;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+
+                if (distance < player.width/2 + plat.starRadius) {
+                    plat.starCollected = true;
+                    score++;
+                    scoreBoard.innerText = `STARS: ${score}`;
+                    spawnParticles(plat.starX, plat.starY, '#ff9e00');
+                }
+            }
+        });
+
+        // Clean up low platforms and generate new ones above
+        let highestPlatY = viewHeight;
+        platforms = platforms.filter(plat => {
+            if (plat.y - cameraY > viewHeight + 100) return false;
+            if (plat.y < highestPlatY) highestPlatY = plat.y;
+            return true;
+        });
+
+        while (highestPlatY > cameraY - viewHeight) {
+            highestPlatY -= 110 + Math.random() * 40;
+            generatePlatform(highestPlatY);
+        }
+
+        // Particle updates
+        particles.forEach((p, idx) => {
+            p.x += p.vx;
+            p.y += p.vy;
+            p.alpha -= 0.02;
+            if (p.alpha <= 0) particles.splice(idx, 1);
+        });
+
+        // Game over conditions
+        if (player.y - cameraY > viewHeight) {
+            endGame();
+        }
+    }
+
+    function render() {
+        ctx.clearRect(0, 0, viewWidth, viewHeight);
+
+        ctx.save();
+        // Translate world coordinates to camera space
+        ctx.translate(0, -cameraY);
+
+        // Draw Platforms
+        platforms.forEach(plat => {
+            ctx.fillStyle = '#7b2cbf';
+            ctx.fillRect(plat.x, plat.y, plat.width, plat.height);
+
+            // Draw Stars
+            if (plat.hasStar && !plat.starCollected) {
+                ctx.fillStyle = '#ff9e00';
+                ctx.beginPath();
+                ctx.arc(plat.starX, plat.starY, plat.starRadius, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        });
+
+        // Draw Player (Avery)
+        ctx.fillStyle = player.color;
+        // Drawing Avery with a cute little hair tuft/bow representation
+        ctx.fillRect(player.x, player.y, player.width, player.height);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(player.x + 5, player.y + 6, 6, 6); // Left Eye
+        ctx.fillRect(player.x + 18, player.y + 6, 6, 6); // Right Eye
+        ctx.fillStyle = '#000000';
+        ctx.fillRect(player.x + 7, player.y + 8, 3, 3);
+        ctx.fillRect(player.x + 20, player.y + 8, 3, 3);
+
+        // Draw Particles
+        particles.forEach(p => {
+            ctx.save();
+            ctx.globalAlpha = p.alpha;
+            ctx.fillStyle = p.color;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+        });
+
+        ctx.restore();
+    }
+
+    function loop() {
+        update();
+        render();
+        requestAnimationFrame(loop);
+    }
+
+    function startGame() {
+        mainMenu.classList.add('hidden');
+        gameOverMenu.classList.add('hidden');
+        initGame();
+        gameState = 'PLAYING';
+    }
+
+    function endGame() {
+        gameState = 'GAMEOVER';
+        if (score > highScore) {
+            highScore = score;
+            localStorage.setItem('avery_highscore', highScore);
+            highScoreBoard.innerText = `HI: ${highScore}`;
+        }
+        document.getElementById('finalScoreText').innerText = `You collected ${score} stars!`;
+        gameOverMenu.classList.remove('hidden');
+    }
+
+    startButton.addEventListener('click', startGame);
+    restartButton.addEventListener('click', startGame);
+
+    // Initial cycle render loop
+    requestAnimationFrame(loop);
+</script>
+
+</body>
+</html>
